@@ -137,7 +137,7 @@ def read(
     dst_crs = dst_crs or src_dst.crs
     with contextlib.ExitStack() as ctx:
         # Use WarpedVRT when Re-projection or User VRT Option (cutline)
-        if (dst_crs != src_dst.crs) or vrt_options:
+        if (dst_crs.wkt != src_dst.crs.wkt) or vrt_options:
             vrt_params = {
                 "crs": dst_crs,
                 "add_alpha": True,
@@ -353,7 +353,7 @@ def part(
 
     padding = padding or 0
     dst_crs = dst_crs or src_dst.crs
-    if bounds_crs and bounds_crs != dst_crs:
+    if bounds_crs and bounds_crs.wkt != dst_crs.wkt:
         bounds = transform_bounds(bounds_crs, dst_crs, *bounds, densify_pts=21)
 
     if minimum_overlap:
@@ -372,7 +372,7 @@ def part(
             )
 
     # Use WarpedVRT when Re-projection or User VRT Option (cutline)
-    if (dst_crs != src_dst.crs) or vrt_options:
+    if (dst_crs.wkt != src_dst.crs.wkt) or vrt_options:
         window = None
         vrt_transform, vrt_width, vrt_height = get_vrt_transform(
             src_dst,
@@ -556,7 +556,7 @@ def point(
             dataset = src_dst
 
         lon, lat = coordinates
-        if coord_crs != dataset.crs:
+        if coord_crs.wkt != dataset.crs.wkt:
             xs, ys = transform_coords(coord_crs, dataset.crs, [lon], [lat])
             lon, lat = xs[0], ys[0]
 

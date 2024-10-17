@@ -491,7 +491,7 @@ class Reader(BaseReader):
             **kwargs,
         )
 
-        if dst_crs != shape_crs:
+        if dst_crs.wkt != shape_crs.wkt:
             shape = transform_geom(shape_crs, dst_crs, shape)
 
         with warnings.catch_warnings():

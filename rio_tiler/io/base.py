@@ -50,7 +50,7 @@ class SpatialMixin:
 
     def get_geographic_bounds(self, crs: CRS) -> BBox:
         """Return Geographic Bounds for a Geographic CRS."""
-        if self.crs == crs:
+        if self.crs.wkt == crs.wkt:
             if self.bounds[1] > self.bounds[3]:
                 warnings.warn(
                     "BoundingBox of the dataset is inverted (minLat > maxLat).",
@@ -87,7 +87,7 @@ class SpatialMixin:
     def _dst_geom_in_tms_crs(self):
         """Return dataset geom info in TMS projection."""
         tms_crs = self.tms.rasterio_crs
-        if self.crs != tms_crs:
+        if self.crs.wkt != tms_crs.wkt:
             dst_affine, w, h = calculate_default_transform(
                 self.crs,
                 tms_crs,
@@ -169,7 +169,7 @@ class SpatialMixin:
         # bounds in TileMatrixSet's CRS
         tile_bounds = self.tms.xy_bounds(Tile(x=tile_x, y=tile_y, z=tile_z))
 
-        if not self.tms.rasterio_crs == self.crs:
+        if not self.tms.rasterio_crs.wkt == self.crs.wkt:
             # Transform the bounds to the dataset's CRS
             try:
                 tile_bounds = transform_bounds(
