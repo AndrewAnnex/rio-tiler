@@ -1,5 +1,41 @@
+# 7.2.2 (2024-11-18)
 
-# Unreleased
+* Catch and expand error message when GDAL cannot encode data using specified image driver (https://github.com/cogeotiff/rio-tiler/pull/767)
+
+# 7.2.1 (2024-11-14)
+
+* add official support for floating point values in ColorMap
+* cast data to `uint8` datatype when applying linear colormap
+
+# 7.2.0 (2024-11-05)
+
+* Ensure compatibility between XarrayReader and other Readers by adding `**kwargs` on class methods (https://github.com/cogeotiff/rio-tiler/pull/762)
+
+* add `STACReader.get_asset_list()` method to enable easier customization of the asset listing/validation (https://github.com/cogeotiff/rio-tiler/pull/762)
+
+# 7.1.0 (2024-10-29)
+
+* Add `preview()` and `statistics()` methods to XarrayReader (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Add output size (`max_size` | `width`, `height`) options for XarrayReader's `preview()`, `part()` and `feature()` methods (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Add half X/Y resolution on bounds before checking the geographic bounds in XarrayReader (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Check if the Y bounds are inverted and flip the image on the Y axis in XarrayReader (https://github.com/cogeotiff/rio-tiler/pull/756)
+
+* Add support for 2D arrays in XarrayReader (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Cast Xarray `attrs` values in XarrayReader's `info()` response to avoid JSON encoding issues (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Refactor XarrayReader's `feature()` method to use the `part` method (https://github.com/cogeotiff/rio-tiler/pull/755)
+
+* Allow `op` parameter for `create_cutline` and `_convert_to_raster_space` functions to better control rasterio's `rowcol` behaviour (author @Martenz, https://github.com/cogeotiff/rio-tiler/pull/759)
+
+# 7.0.1 (2024-10-22)
+
+* Add `CRS_to_urn` method and update internals for `CRS_to_uri` (author @AndrewAnnex, https://github.com/cogeotiff/rio-tiler/pull/752)
+
+# 7.0.0 (2024-10-21)
 
 * Enable dynamic definition of Asset **reader** in `MultiBaseReader` (https://github.com/cogeotiff/rio-tiler/pull/711/, https://github.com/cogeotiff/rio-tiler/pull/728)
 
@@ -76,6 +112,20 @@
 * add `crs: str` property in `Info` model
 
 * remove `minzoom` and `maxzoom` properties in `Info` model **breaking change**
+
+* update `morecantile` dependency to allow `6.x` version
+
+* remove deprecated method and attributes
+
+* `round` xarray dataset's bounds to avoid precision errors when checking for valid geographic bounding box
+
+* fix `bounds` type information
+
+# 6.8.0 (2024-10-23)
+
+* Enable **Alternate** asset's HREF for STAC by using `RIO_TILER_STAC_ALTERNATE_KEY` environment variable [Backported from `7.0`]
+
+* Adding support for GDAL VRT Connection string for STAC Assets [Backported from `7.0`]
 
 # 6.7.0 (2024-09-05)
 

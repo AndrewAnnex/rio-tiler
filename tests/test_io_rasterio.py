@@ -17,6 +17,7 @@ from rasterio.io import MemoryFile
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 
+from rio_tiler.colormap import cmap
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 from rio_tiler.errors import (
     ExpressionMixingWarning,
@@ -102,7 +103,6 @@ def test_info_valid():
 
         assert src.colormap
         meta = src.info()
-        assert meta["colormap"]
         assert meta.colormap
 
     with Reader(COG_NODATA, colormap={1: (0, 0, 0, 0)}) as src:
@@ -371,12 +371,6 @@ def test_statistics():
         assert stats["b1"].percentile_2
         assert stats["b1"].percentile_98
 
-        with pytest.warns(DeprecationWarning):
-            assert stats["b1"]["percentile_2"]
-
-        with pytest.warns(DeprecationWarning):
-            assert stats["b1"]["percentile_98"]
-
     with Reader(COGEO) as src:
         stats = src.statistics(percentiles=[3])
         assert stats["b1"].percentile_3
@@ -425,7 +419,6 @@ def test_Reader_Options():
     with Reader(COGEO, options={"nodata": 1}) as src:
         assert src.info().nodata_value == 1
         assert src.info().nodata_type == "Nodata"
-        assert src.info()["nodata_type"] == "Nodata"
 
     with Reader(COGEO) as src:
         assert src.info().nodata_type == "None"
@@ -770,6 +763,7 @@ def test_equality_part_feature():
         # I would assume this is due to rounding issue or reprojection of the cutline by GDAL
         # After some debugging locally I found out the rasterized mask is more precise
         # numpy.testing.assert_array_equal(img_part.mask, img_feat.mask)
+        # NOTE reply: can this rounding be fixed with a different operator passed to rasterio rowcol?
 
         # Re-Projection
         img_feat = src.feature(feat, dst_crs="epsg:3857")
@@ -895,9 +889,17 @@ def test_nonearthbody():
     """Reader should work with non-earth dataset."""
     EUROPA_SPHERE = CRS.from_proj4("+proj=longlat +R=1560800 +no_defs")
 
-    with pytest.warns(UserWarning):
-        with Reader(COG_EUROPA) as src:
+    with Reader(COG_EUROPA) as src:
+        with pytest.warns(
+            UserWarning,
+            match="Cannot determine minzoom based on dataset information, will default to TMS minzoom.",
+        ):
             assert src.minzoom == 0
+
+        with pytest.warns(
+            UserWarning,
+            match="Cannot determine maxzoom based on dataset information, will default to TMS maxzoom.",
+        ):
             assert src.maxzoom == 24
 
     # Warns because of zoom level in WebMercator can't be defined
@@ -926,13 +928,12 @@ def test_nonearthbody():
         lat = (src.bounds[1] + src.bounds[3]) / 2
         assert src.point(lon, lat, coord_crs=src.crs).data[0] is not None
 
-    with pytest.warns(UserWarning):
-        europa_crs = CRS.from_authority("ESRI", 104915)
-        tms = TileMatrixSet.custom(
-            crs=europa_crs,
-            extent=europa_crs.area_of_use.bounds,
-            matrix_scale=[2, 1],
-        )
+    europa_crs = CRS.from_authority("ESRI", 104915)
+    tms = TileMatrixSet.custom(
+        crs=europa_crs,
+        extent=europa_crs.area_of_use.bounds,
+        matrix_scale=[2, 1],
+    )
 
     with Reader(COG_EUROPA, tms=tms) as src:
         assert src.info()
@@ -966,11 +967,11 @@ def test_nonearth_custom():
         MARS_MERCATOR,
         extent_crs=MARS2000_SPHERE,
         title="Web Mercator Mars",
-        geographic_crs=MARS2000_SPHERE,
     )
 
     with Reader(COG_MARS, tms=mars_tms) as src:
         assert src.get_geographic_bounds(MARS2000_SPHERE)[0] > -180
+        assert src.get_geographic_bounds(mars_tms.rasterio_geographic_crs)[0] > -180
 
 
 def test_tms_tilesize_and_zoom():
@@ -1120,3 +1121,27 @@ def test_inverted_latitude():
     with pytest.warns(UserWarning):
         with Reader(COG_INVERTED) as src:
             _ = src.tile(0, 0, 0)
+
+
+def test_int16_colormap():
+    """Should raise a warning about invalid data type for applying colormap.
+
+    ref: https://github.com/developmentseed/titiler/issues/1023
+    """
+    data = os.path.join(PREFIX, "cog_int16.tif")
+    color_map = cmap.get("viridis")
+
+    with Reader(data) as src:
+        info = src.info()
+        assert info.dtype == "int16"
+        assert info.nodata_type == "Nodata"
+        assert info.nodata_value == -32768
+
+        img = src.preview()
+        assert img.mask.any()
+
+        with pytest.warns(UserWarning):
+            im = img.apply_colormap(color_map)
+
+            # make sure we keep the nodata part masked
+            assert not im.mask.all()

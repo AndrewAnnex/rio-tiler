@@ -3,7 +3,17 @@
 import math
 import warnings
 from io import BytesIO
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import numpy
 import rasterio
@@ -23,7 +33,7 @@ from rasterio.warp import calculate_default_transform, transform_geom
 
 from rio_tiler.colormap import apply_cmap
 from rio_tiler.constants import WEB_MERCATOR_CRS, WGS84_CRS
-from rio_tiler.errors import RioTilerError
+from rio_tiler.errors import InvalidFormat, RioTilerError
 from rio_tiler.types import BBox, ColorMapType, IntervalTuple, RIOResampling
 
 
@@ -578,24 +588,30 @@ def render(
     }
     output_profile.update(creation_options)
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            category=NotGeoreferencedWarning,
-            module="rasterio",
-        )
-        with MemoryFile() as memfile:
-            with memfile.open(**output_profile) as dst:
-                dst.write(data, indexes=list(range(1, count + 1)))
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=NotGeoreferencedWarning,
+                module="rasterio",
+            )
+            with MemoryFile() as memfile:
+                with memfile.open(**output_profile) as dst:
+                    dst.write(data, indexes=list(range(1, count + 1)))
 
-                # Use Mask as an alpha band
-                if mask is not None:
-                    if ColorInterp.alpha not in dst.colorinterp:
-                        dst.colorinterp = *dst.colorinterp[:-1], ColorInterp.alpha
+                    # Use Mask as an alpha band
+                    if mask is not None:
+                        if ColorInterp.alpha not in dst.colorinterp:
+                            dst.colorinterp = *dst.colorinterp[:-1], ColorInterp.alpha
 
-                    dst.write(mask.astype(data.dtype), indexes=count + 1)
+                        dst.write(mask.astype(data.dtype), indexes=count + 1)
 
-            return memfile.read()
+                return memfile.read()
+
+    except Exception as e:
+        raise InvalidFormat(
+            f"Could not encode array of shape ({count},{height},{width}) and of datatype `{data.dtype}` using {img_format} driver"
+        ) from e
 
 
 def mapzen_elevation_rgb(data: numpy.ndarray) -> numpy.ndarray:
@@ -642,12 +658,15 @@ def pansharpening_brovey(
 def _convert_to_raster_space(
     src_dst: Union[DatasetReader, DatasetWriter, WarpedVRT],
     poly_coordinates: List,
+    op: Optional[Callable[[float], Any]] = None,
 ) -> List[str]:
+    # NOTE: we could remove this once we have rasterio >= 1.4.2
+    op = op or numpy.floor
     polygons = []
     for point in poly_coordinates:
         xs, ys = zip(*coords(point))
-        src_y, src_x = rowcol(src_dst.transform, xs, ys)
-        polygon = ", ".join([f"{x} {y}" for x, y in list(zip(src_x, src_y))])
+        src_y, src_x = rowcol(src_dst.transform, xs, ys, op=op)
+        polygon = ", ".join([f"{int(x)} {int(y)}" for x, y in list(zip(src_x, src_y))])
         polygons.append(f"({polygon})")
 
     return polygons
@@ -657,6 +676,7 @@ def create_cutline(
     src_dst: Union[DatasetReader, DatasetWriter, WarpedVRT],
     geometry: Dict,
     geometry_crs: CRS = None,
+    op: Optional[Callable[[float], Any]] = None,
 ) -> str:
     """
     Create WKT Polygon Cutline for GDALWarpOptions.
@@ -678,13 +698,13 @@ def create_cutline(
         geometry = transform_geom(geometry_crs, src_dst.crs, geometry)
 
     if geom_type == "Polygon":
-        polys = ",".join(_convert_to_raster_space(src_dst, geometry["coordinates"]))
+        polys = ",".join(_convert_to_raster_space(src_dst, geometry["coordinates"], op))
         wkt = f"POLYGON ({polys})"
 
     elif geom_type == "MultiPolygon":
         multi_polys = []
         for poly in geometry["coordinates"]:
-            polys = ",".join(_convert_to_raster_space(src_dst, poly))
+            polys = ",".join(_convert_to_raster_space(src_dst, poly, op))
             multi_polys.append(f"({polys})")
         str_multipoly = ",".join(multi_polys)
         wkt = f"MULTIPOLYGON ({str_multipoly})"
@@ -791,7 +811,7 @@ def cast_to_sequence(val: Optional[Any] = None) -> Sequence:
     return val
 
 
-def CRS_to_uri(crs: CRS) -> Optional[str]:
+def _CRS_authority_info(crs: CRS) -> Optional[Tuple[str, str, str]]:
     """Convert CRS to URI.
 
     Code adapted from https://github.com/developmentseed/morecantile/blob/1829fe12408e4a1feee7493308f3f02257ef4caf/morecantile/models.py#L148-L161
@@ -804,6 +824,28 @@ def CRS_to_uri(crs: CRS) -> Optional[str]:
         if "_" in authority:
             authority, version = authority.split("_")
 
+        return authority, version, code
+
+    return None
+
+
+def CRS_to_uri(crs: CRS) -> Optional[str]:
+    """Convert CRS to URI."""
+    if info := _CRS_authority_info(crs):
+        authority, version, code = info
+
         return f"http://www.opengis.net/def/crs/{authority}/{version}/{code}"
+
+    return None
+
+
+def CRS_to_urn(crs: CRS) -> Optional[str]:
+    """Convert CRS to URN."""
+    if info := _CRS_authority_info(crs):
+        authority, version, code = info
+        if version == "0":
+            version = ""
+
+        return f"urn:ogc:def:crs:{authority}:{version}:{code}"
 
     return None
